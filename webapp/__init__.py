@@ -1,0 +1,1 @@
+"""MosquitoScope Flask web application."""

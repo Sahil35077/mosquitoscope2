@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Model downloaded at build time from Hugging Face
+webapp/data/*.pth
+*.pth
