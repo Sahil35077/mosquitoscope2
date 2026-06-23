@@ -71,52 +71,73 @@ def api_disease(slug):
 
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
-    if "image" not in request.files:
-        return jsonify({"error": "No image file provided."}), 400
-
-    file = request.files["image"]
-    if not file.filename:
-        return jsonify({"error": "Empty filename."}), 400
-    if not allowed_file(file.filename):
-        return jsonify({
-            "error": f"Unsupported format. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-        }), 400
-
-    image_bytes = file.read()
-    ground_truth = request.form.get("ground_truth", "").strip() or None
-
-    clf = get_classifier()
     try:
-        result = clf.predict(image_bytes)
-    finally:
-        release_memory()
+        if "image" not in request.files:
+            return jsonify({"error": "No image file provided."}), 400
 
-    mime = file.mimetype or "image/jpeg"
-    image_b64_url = _preview_data_url(image_bytes, mime)
-    del image_bytes
-    top_class = result["top_class"]
-    fact = get_fact(top_class)
+        file = request.files["image"]
+        if not file.filename:
+            return jsonify({"error": "Empty filename."}), 400
+        if not allowed_file(file.filename):
+            return jsonify({
+                "error": f"Unsupported format. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+            }), 400
 
-    response = {
-        "filename": file.filename,
-        "image_data_url": image_b64_url,
-        "prediction": result,
-        "fact": fact,
-        "model_metrics": get_ui_context()["model_metrics"],
-    }
+        image_bytes = file.read()
+        ground_truth = request.form.get("ground_truth", "").strip() or None
 
-    if ground_truth:
-        if ground_truth not in clf.classes:
-            response["ground_truth_evaluation"] = {
-                "ground_truth": ground_truth,
-                "error": "Ground truth label is not in the trained class list.",
-            }
-        else:
-            response["ground_truth_evaluation"] = clf.evaluate_ground_truth(
-                top_class, ground_truth
-            )
+        try:
+            clf = get_classifier()
+        except FileNotFoundError:
+            return jsonify({
+                "error": "Model file not found. Redeploy with Build Command ./build.sh so the checkpoint downloads from Hugging Face.",
+            }), 503
+        except Exception:
+            app.logger.exception("Model load failed")
+            return jsonify({
+                "error": (
+                    "Could not load the AI model (often out of memory on Render free tier). "
+                    "Try again in 30s, or upgrade to Starter plan (~$7/mo)."
+                ),
+            }), 503
 
-    return jsonify(response)
+        try:
+            result = clf.predict(image_bytes)
+        finally:
+            release_memory()
+
+        mime = file.mimetype or "image/jpeg"
+        image_b64_url = _preview_data_url(image_bytes, mime)
+        del image_bytes
+        top_class = result["top_class"]
+        fact = get_fact(top_class)
+
+        response = {
+            "filename": file.filename,
+            "image_data_url": image_b64_url,
+            "prediction": result,
+            "fact": fact,
+            "model_metrics": get_ui_context()["model_metrics"],
+        }
+
+        if ground_truth:
+            if ground_truth not in clf.classes:
+                response["ground_truth_evaluation"] = {
+                    "ground_truth": ground_truth,
+                    "error": "Ground truth label is not in the trained class list.",
+                }
+            else:
+                response["ground_truth_evaluation"] = clf.evaluate_ground_truth(
+                    top_class, ground_truth
+                )
+
+        return jsonify(response)
+
+    except Exception:
+        app.logger.exception("Prediction request failed")
+        return jsonify({
+            "error": "Prediction failed on the server. Please try again in a moment.",
+        }), 500
 
 
 @app.route("/health")
