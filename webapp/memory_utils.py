@@ -3,6 +3,8 @@
 import gc
 import os
 
+_torch_configured = False
+
 
 def is_low_memory_mode() -> bool:
     return os.environ.get("LOW_MEMORY", "").lower() in ("1", "true", "yes") or os.environ.get(
@@ -12,17 +14,30 @@ def is_low_memory_mode() -> bool:
 
 def configure_torch():
     """Call once at process startup before loading the model."""
+    global _torch_configured
+    if _torch_configured:
+        return
+
     try:
         import torch
     except ImportError:
         return
 
     threads = int(os.environ.get("TORCH_NUM_THREADS", "1" if is_low_memory_mode() else "2"))
-    torch.set_num_threads(max(1, threads))
+    try:
+        torch.set_num_threads(max(1, threads))
+    except RuntimeError:
+        pass
+
     torch.set_grad_enabled(False)
 
     if hasattr(torch, "set_num_interop_threads"):
-        torch.set_num_interop_threads(1)
+        try:
+            torch.set_num_interop_threads(1)
+        except RuntimeError:
+            pass  # already set or parallel work has started
+
+    _torch_configured = True
 
 
 def release_memory():

@@ -15,13 +15,12 @@ from webapp.config import (
     TOP_K,
 )
 from webapp.download_assets import ensure_model
-from webapp.memory_utils import configure_torch, is_low_memory_mode, release_memory
+from webapp.memory_utils import is_low_memory_mode, release_memory
 from webapp.metrics_loader import get_ui_context
 
 
 class MosquitoClassifier:
     def __init__(self):
-        configure_torch()
         force_cpu = os.environ.get("FORCE_CPU", "").lower() in ("1", "true", "yes")
         self.device = "cpu" if force_cpu else ("cuda" if torch.cuda.is_available() else "cpu")
         self.use_tta = not is_low_memory_mode() and os.environ.get("DISABLE_TTA", "").lower() not in (
